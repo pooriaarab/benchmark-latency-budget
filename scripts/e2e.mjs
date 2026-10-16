@@ -8,7 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { provenanceMarkdown } from "benchmark-core";
 import {
-  benchmark, isCorrect, latencyMeta, score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
+  benchmark, DESCRIBE_TOOLS_MS, isCorrect, LatencyBudgetEnvironment, latencyMeta, score as scoreOne,
+  summarizeTimes, sweepDeadlines, totalTimeMs,
 } from "../dist/index.js";
 const execFile = promisify(execFileCallback);
 
@@ -49,6 +50,15 @@ for (const task of samples) {
   const stuffed = { ...task, metadata: { ...task.metadata, candidates: [String(task.expected), "decoy-value-zz"] } };
   assert.equal(isCorrect(stuffed, { answer: `${task.expected} or decoy-value-zz`, toolLog: goodLog }), false, `${task.id} stuffed answer`);
   assert.equal(isCorrect(stuffed, { answer: `The answer is ${task.expected}.`, toolLog: goodLog }), true, `${task.id} candidates paraphrase`);
+  const describeEnv = new LatencyBudgetEnvironment();
+  describeEnv.reset(task, 1);
+  const described = describeEnv.callTool("describe_tools", {});
+  for (const tool of described.result.tools) {
+    const expectedMs = tool.name === "describe_tools" ? DESCRIBE_TOOLS_MS : (meta.latencyMs[tool.name] ?? null);
+    assert.equal(tool.latencyMs, expectedMs, `${task.id} describe_tools ${tool.name}`);
+  }
+  const describeOnlyLog = [{ name: "describe_tools", args: {}, result: null }];
+  assert.equal(totalTimeMs(task, describeOnlyLog), meta.thinkMs * 2 + DESCRIBE_TOOLS_MS, `${task.id} describe_tools charge`);
   const badAnswers = [
     {},
     { answer: "xyzzy-not-an-answer" },
