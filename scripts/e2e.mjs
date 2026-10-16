@@ -6,6 +6,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { provenanceMarkdown } from "benchmark-core";
+import {
+  benchmark, isCorrect, latencyMeta, score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
+} from "../dist/index.js";
 const execFile = promisify(execFileCallback);
 
 await execFile("npm", ["run", "build"]);
@@ -14,6 +18,50 @@ const report = JSON.parse(cli.stdout);
 assert.equal(report.rows.length, 36);
 assert.ok(report.rows.some((row) => row.score === 1));
 assert.ok(report.rows.some((row) => row.score === 0));
+
+const tasks = await benchmark.listTasks();
+const byId = new Map(tasks.map((task) => [task.id, task]));
+const samples = ["voice-01", "ui-01", "bg-01"].map((id) => byId.get(id));
+assert.ok(samples.every((task) => task !== undefined));
+for (const task of samples) {
+  const meta = latencyMeta(task);
+  const goodLog = meta.minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null }));
+  const good = { answer: task.expected, toolLog: goodLog };
+  assert.equal((await scoreOne(task.id, good)).score, 1);
+  const badAnswers = [
+    {},
+    { answer: "xyzzy-not-an-answer" },
+    { answer: "yes" },
+    { answer: "yes", toolLog: [{ name: "lookup", args: { key: "Nobody Here" }, result: null }] },
+    { answer: task.expected, toolLog: [] },
+  ];
+  for (const bad of badAnswers) assert.equal((await scoreOne(task.id, bad)).score, 0);
+  const curve = sweepDeadlines(task, good);
+  assert.deepEqual(curve.map((point) => point.factor), [0.5, 1, 2, 4]);
+  for (let i = 1; i < curve.length; i++) assert.ok(curve[i].score >= curve[i - 1].score);
+  assert.equal(curve[1].score, 1);
+  const total = totalTimeMs(task, goodLog);
+  assert.equal(curve[0].score, total <= Math.round(meta.deadlineMs * 0.5) ? 1 : 0);
+  const lateLog = [...goodLog, ...Array.from({ length: 8 }, () => ({ name: "search_docs", args: { query: "zzzz-no-match" }, result: null }))];
+  const late = { answer: task.expected, toolLog: lateLog };
+  if (totalTimeMs(task, lateLog) > meta.deadlineMs) {
+    assert.equal(isCorrect(task, late), true);
+    assert.equal((await scoreOne(task.id, late)).score, 0);
+  }
+}
+
+const timingEntries = report.rows.map((row) => {
+  const task = byId.get(row.taskId);
+  const log = row.submission?.toolLog ?? [];
+  const total = totalTimeMs(task, log);
+  const correct = isCorrect(task, row.submission ?? {});
+  return { totalTimeMs: total, correct, onTime: total <= latencyMeta(task).deadlineMs, score: row.score };
+});
+const timing = summarizeTimes(timingEntries);
+assert.equal(timing.count, 36);
+assert.ok(timing.p50 <= timing.p95);
+assert.equal(timing.lateButCorrect, timingEntries.filter((e) => e.correct && !e.onTime).length);
+const sampleCurve = sweepDeadlines(samples[0], { answer: samples[0].expected, toolLog: latencyMeta(samples[0]).minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null })) });
 
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -53,8 +101,13 @@ try {
   }
 } finally { await client.close(); }
 
-const artifact = { task_count: report.rows.length, scores: report.rows.map((row) => row.score), route_status_codes: routes, tool_names: toolNames };
+assert.equal(await readFile("data/PROVENANCE.md", "utf8"), provenanceMarkdown(benchmark));
+const artifact = {
+  task_count: report.rows.length, scores: report.rows.map((row) => row.score),
+  route_status_codes: routes, tool_names: toolNames,
+  timing: { p50_ms: timing.p50, p95_ms: timing.p95, late_but_correct: timing.lateButCorrect },
+  sample_curve_voice_01: sampleCurve,
+};
 await mkdir("artifacts", { recursive: true });
 await writeFile("artifacts/e2e-report.json", `${JSON.stringify(artifact, null, 2)}\n`);
-assert.match(await readFile("data/PROVENANCE.md", "utf8"), /Seeded latency-budget task generator/);
-console.log(`e2e: ${artifact.task_count} tasks, ${Object.keys(routes).length} routes, ${toolNames.length} tools -> all surfaces passed, ok`);
+console.log(`e2e: ${artifact.task_count} tasks, ${Object.keys(routes).length} routes, ${toolNames.length} tools, p50 ${timing.p50}ms p95 ${timing.p95}ms -> all surfaces passed, ok`);
