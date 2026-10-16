@@ -17,9 +17,9 @@ function stripGlobalOptions(argv: string[]): GlobalOptions {
   let clock: ClockMode | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
-    if (arg === "--tasks") tasksPath = argv[++i];
+    if (arg === "--tasks") tasksPath = argv[++i] ?? "";
     else if (arg.startsWith("--tasks=")) tasksPath = arg.slice("--tasks=".length);
-    else if (arg === "--clock") clock = argv[++i] as ClockMode;
+    else if (arg === "--clock") clock = (argv[++i] ?? "") as ClockMode;
     else if (arg.startsWith("--clock=")) clock = arg.slice("--clock=".length) as ClockMode;
     else rest.push(arg);
   }
