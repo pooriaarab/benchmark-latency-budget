@@ -37,28 +37,29 @@ export class LatencyBudgetEnvironment implements Environment {
   }
   callTool(name: string, args: Record<string, JsonValue>): ToolResult {
     const fixtures = this.#task === undefined ? {} : fixturesOf(this.#task);
+    const callArgs: Record<string, JsonValue> = args !== null && typeof args === "object" ? args : {};
     if (name === "lookup") {
-      const key = String(args["key"] ?? "");
+      const key = String(callArgs["key"] ?? "");
       const entry = fixtures.directory?.[key];
       if (entry === undefined) return { result: null, error: { code: "NOT_FOUND", message: `No directory entry for ${key}.` } };
       return { result: { key, extension: entry.extension, room: entry.room } };
     }
     if (name === "calendar_get") {
-      const date = String(args["date"] ?? "");
+      const date = String(callArgs["date"] ?? "");
       const events = fixtures.calendar?.[date];
       if (events === undefined) return { result: null, error: { code: "NOT_FOUND", message: `No calendar data for ${date}.` } };
       return { result: { date, events } };
     }
     if (name === "search_docs") {
-      const query = String(args["query"] ?? "").toLowerCase();
+      const query = String(callArgs["query"] ?? "").toLowerCase();
       const words = query.split(/\s+/).filter((w) => w.length > 0);
-      if (words.length === 0) return { result: { query: args["query"] ?? "", results: [] } };
+      if (words.length === 0) return { result: { results: [] } };
       const docs = fixtures.docs ?? [];
       const results = docs.filter((doc) => {
         const hay = `${doc.title} ${doc.topic}`.toLowerCase();
         return hay.includes(query) || words.some((w) => hay.includes(w));
       });
-      return { result: { query: args["query"] ?? "", results } };
+      return { result: { results } };
     }
     return { result: null, error: { code: "UNKNOWN_TOOL", message: `Unknown tool: ${name}` } };
   }

@@ -48,18 +48,36 @@ export function normalizeAnswer(value: unknown): string {
 export function totalTimeMs(task: Task, toolLog: readonly ToolLogEntry[]): number {
   const meta = latencyMeta(task);
   let total = meta.thinkMs;
-  for (const entry of toolLog) total += meta.latencyMs[entry.name] ?? UNKNOWN_TOOL_MS;
+  for (const raw of toolLog) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const name = (raw as { name?: unknown }).name;
+    total += (typeof name === "string" ? meta.latencyMs[name] : undefined) ?? UNKNOWN_TOOL_MS;
+  }
   return total;
 }
 
-/** True when a successful re-derived tool result contains the expected answer. */
+function entryArgs(entry: ToolLogEntry): Record<string, JsonValue> {
+  const args: unknown = (entry as { args?: unknown }).args;
+  return args !== null && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, JsonValue>) : {};
+}
+
+/**
+ * True when a successful re-derived tool result contains the expected answer.
+ * A match is ignored when the call's own arguments already contain the
+ * answer, so feeding the answer back as a query is not evidence.
+ */
 export function evidenceFound(task: Task, toolLog: readonly ToolLogEntry[], seed = 1): boolean {
   const want = normalizeAnswer(task.expected);
   if (want === "") return false;
   const env = new LatencyBudgetEnvironment();
   env.reset(task, seed);
-  for (const entry of toolLog) {
-    const outcome = env.callTool(entry.name, entry.args);
+  for (const raw of toolLog) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const entry = raw as ToolLogEntry;
+    const name = typeof entry.name === "string" ? entry.name : "";
+    const args = entryArgs(entry);
+    if (JSON.stringify(args).toLowerCase().includes(want)) continue;
+    const outcome = env.callTool(name, args);
     if (outcome.error !== undefined) continue;
     if (JSON.stringify(outcome.result ?? null).toLowerCase().includes(want)) return true;
   }

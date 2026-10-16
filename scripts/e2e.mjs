@@ -35,6 +35,7 @@ for (const task of samples) {
     { answer: "yes", toolLog: [{ name: "lookup", args: { key: "Nobody Here" }, result: null }] },
     { answer: task.expected, toolLog: [] },
     { answer: task.expected, toolLog: [{ name: "search_docs", args: { query: "   " }, result: null }] },
+    { answer: task.expected, toolLog: [{ name: "search_docs", args: { query: String(task.expected) }, result: null }] },
   ];
   for (const bad of badAnswers) assert.equal((await scoreOne(task.id, bad)).score, 0);
   const curve = sweepDeadlines(task, good);
