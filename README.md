@@ -31,7 +31,8 @@ npx benchmark-latency-budget run --model offline --provider mock
 
 The tasks are seeded synthetic directory, calendar, and doc lookups. Seed
 20261015 reproduces the public set; a hidden split derives from a
-transformed seed so its prompts and answers never repeat the public one.
+transformed seed, so its prompts and answers never repeat the public one
+and its task ids carry an `h-` prefix.
 
 ## Install
 

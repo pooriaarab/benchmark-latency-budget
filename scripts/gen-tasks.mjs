@@ -219,6 +219,9 @@ const tasks = [
   ...Array.from({ length: 12 }, (_, i) => buildUi(rand, i)),
   ...Array.from({ length: 12 }, (_, i) => buildBackground(rand, i)),
 ];
+// Hidden ids carry an h- prefix so a hidden run's report rows can never be
+// mistaken for public ones (or silently matched against the public set).
+if (split === "hidden") for (const t of tasks) t.id = `h-${t.id}`;
 const ids = new Set(tasks.map((t) => t.id));
 if (ids.size !== 36) throw new Error("Task ids are not unique.");
 for (const t of tasks) {
