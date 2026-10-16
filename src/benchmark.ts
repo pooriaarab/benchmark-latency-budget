@@ -1,41 +1,58 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { defineBenchmark, exactMatch, replay, type Environment, type JsonValue, type Task, type ToolResult } from "benchmark-core";
+import { defineBenchmark, type Task } from "benchmark-core";
+import { formatDeadlineRanges, gradeLatency, latencyMeta } from "./latency.js";
+import { LatencyBudgetEnvironment, type ClockMode } from "./simulator.js";
 
-async function loadTasks(): Promise<Task[]> {
-  const text = await readFile(new URL("../data/tasks.jsonl", import.meta.url), "utf8");
+export interface LatencyBenchmarkOptions {
+  /** Path to a tasks.jsonl file; defaults to the packaged public set. */
+  tasksPath?: string;
+  /** Clock mode for episodes; defaults to measured, or declared via LATENCY_BUDGET_CLOCK=declared. */
+  clock?: ClockMode;
+}
+
+const DEFAULT_TASKS_URL = new URL("../data/tasks.jsonl", import.meta.url);
+
+export async function loadTasksFrom(tasksPath?: string): Promise<Task[]> {
+  const text = await readFile(tasksPath ?? DEFAULT_TASKS_URL, "utf8");
   return text.trim().split("\n").map((line) => JSON.parse(line) as Task);
 }
-class StarterEnvironment implements Environment {
-  #finished = false;
-  reset() {
-    this.#finished = false;
-    return { system: "Call finish_task once, then stop.", tools: [{ name: "finish_task", description: "Mark the task finished.", parameters: { type: "object" as const, properties: {}, additionalProperties: false } }] };
+
+/** Deadline range text generated from the task data, so metadata cannot drift. */
+function deadlineText(tasksPath?: string): string {
+  try {
+    const text = readFileSync(tasksPath ?? DEFAULT_TASKS_URL, "utf8");
+    const tasks = text.trim().split("\n").map((line) => JSON.parse(line) as Task);
+    return formatDeadlineRanges(tasks) || "a per-task deadline";
+  } catch {
+    return "a per-task deadline";
   }
-  callTool(name: string, _args: Record<string, JsonValue>): ToolResult {
-    if (name !== "finish_task") return { result: null, error: { code: "UNKNOWN_TOOL", message: `Unknown tool: ${name}` } };
-    this.#finished = true; return { result: { finished: true } };
-  }
-  state() { return { finished: this.#finished }; }
-  done() { return this.#finished; }
 }
-export const benchmark = defineBenchmark({
-  id: "benchmark-latency-budget", name: "Latency Budget", tagline: "Quality that only counts if it arrives before the deadline.", tags: ["helpful"], category: "agents",
-  whatItMeasures: "Quality that only counts if it arrives before the deadline.", version: "0.1.0", status: "alpha", loadTasks,
-  async grade(task, submission, context) {
-    if (task.kind === "single") return submission.answer === undefined ? { score: 0, reason: "Submission has no answer." } : exactMatch(task.expected ?? null, submission.answer);
-    const state = await replay(new StarterEnvironment(), task, submission.toolLog ?? [], context.seed) as { finished?: boolean };
-    return state.finished ? { score: 1, reason: "The trace finished the task." } : { score: 0, reason: "The trace did not finish the task." };
-  },
-  environment: () => new StarterEnvironment(),
-  mockPolicies: {
-    good: (task) => task.kind === "episode" ? [{ toolCalls: [{ name: "finish_task", args: {} }] }] : [],
-    bad: (task) => task.kind === "episode" ? [{ content: "Skipped the tool." }] : [],
-  },
-  provenance: [{
-    name: "Seeded starter task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-latency-budget/blob/main/scripts/gen-tasks.mjs",
-    licence: "MIT", howToGet: "Run `node scripts/gen-tasks.mjs` from the repository root.", retrievedAt: "2026-10-15T00:00:00.000Z",
-    contaminationNotes: "Public starter tasks generated with seed 20261015. Keep final evaluation tasks in a separately seeded hidden split.",
-    refresh: "Change the seed, run the generator, and review the JSONL diff.",
-  }],
-  gradingMethod: "Exact match for single answers; deterministic state replay for episodes.",
-});
+
+export function createLatencyBenchmark(options: LatencyBenchmarkOptions = {}) {
+  return defineBenchmark({
+    id: "benchmark-latency-budget", name: "Latency Budget", tagline: "Quality that only counts if it arrives before the deadline.", tags: ["helpful"], category: "agents",
+    whatItMeasures: `Whether an agent gives the right answer before its deadline (${deadlineText(options.tasksPath)}), each set at 1.5-2x the shortest correct path, with virtual per-tool latencies.`, version: "0.1.0", status: "alpha",
+    loadTasks: () => loadTasksFrom(options.tasksPath),
+    grade(task, submission, context) {
+      return gradeLatency(task, submission, context.seed);
+    },
+    environment: () => new LatencyBudgetEnvironment(options.clock === undefined ? {} : { clock: options.clock }),
+    mockPolicies: {
+      good: (task) => [
+        ...latencyMeta(task).minimalCalls.map((call) => ({ toolCalls: [{ name: call.name, args: call.args }] })),
+        { content: typeof task.expected === "string" ? task.expected : JSON.stringify(task.expected ?? "") },
+      ],
+      bad: () => [{ content: "yes" }],
+    },
+    provenance: [{
+      name: "Seeded latency-budget task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-latency-budget/blob/main/scripts/gen-tasks.mjs",
+      licence: "MIT", howToGet: "Run `node scripts/gen-tasks.mjs --seed 20261015` for the public tasks, or `node scripts/gen-tasks.mjs --seed <n> --split hidden` for a hidden split (written to gitignored artifacts/ with h- prefixed task ids).", retrievedAt: "2026-10-15T00:00:00.000Z",
+      contaminationNotes: "Public tasks generated with seed 20261015, benchmark cutoff 2026-10-15. Public tasks may enter training data; use a separately seeded hidden split for final comparisons.",
+      refresh: "Pick a new seed, run the generator, review the JSONL diff. Regenerate quarterly or when saturation is shown.",
+    }],
+    gradingMethod: "qualityWithinBudget: a single named candidate value (bounded, case-insensitive) grounded in replayed tool output, scored 1 only when total time (measured or declared per-turn model time plus scheduled tool latencies) is within the task deadline. Reports p50/p95 time, lateButCorrect count, and a 0.5x-4x deadline curve.",
+  });
+}
+
+export const benchmark = createLatencyBenchmark();

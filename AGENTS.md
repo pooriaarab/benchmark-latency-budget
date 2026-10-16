@@ -10,7 +10,7 @@
 
 ## Contracts
 
-Keep tasks, deterministic grading, and provenance in sync. Episode environments must be seeded. Grade episode traces by replaying their tool log.
+Keep tasks, deterministic grading, and provenance in sync. Episode environments must be seeded. Grade episode traces by replaying their tool log against a fresh simulator. Time is virtual: scheduled charge per call plus model turn time (measured wall-clock from the environment, or declared thinkMs per turn when the clock is declared). Write the failure modes in docs/grading.md before changing grader code.
 
 Never read provider keys from repository files. OpenRouter uses `OPENROUTER_API_KEY`. OpenAI-compatible providers use `OPENAI_BASE_URL` and `OPENAI_API_KEY`.
 

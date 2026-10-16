@@ -6,14 +6,168 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { provenanceMarkdown } from "benchmark-core";
+import {
+  benchmark, DESCRIBE_TOOLS_MS, formatDeadlineRanges, isCorrect, LatencyBudgetEnvironment, latencyMeta,
+  latencyReport, score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
+} from "../dist/index.js";
 const execFile = promisify(execFileCallback);
 
 await execFile("npm", ["run", "build"]);
 const cli = await execFile(process.execPath, ["dist/cli.js", "run", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 1_000_000 });
 const report = JSON.parse(cli.stdout);
-assert.equal(report.rows.length, 2);
+assert.equal(report.rows.length, 36);
 assert.ok(report.rows.some((row) => row.score === 1));
 assert.ok(report.rows.some((row) => row.score === 0));
+assert.equal(report.latency.rows, 36);
+assert.equal(typeof report.latency.p50Ms, "number");
+assert.ok(report.latency.p50Ms <= report.latency.p95Ms);
+assert.deepEqual(report.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
+for (let i = 1; i < report.latency.deadlineCurve.length; i++) {
+  assert.ok(report.latency.deadlineCurve[i].meanScore >= report.latency.deadlineCurve[i - 1].meanScore);
+}
+
+const tasks = await benchmark.listTasks();
+assert.equal(tasks.length, 36);
+const byId = new Map(tasks.map((task) => [task.id, task]));
+let gamedChecked = 0;
+for (const task of tasks) {
+  const meta = latencyMeta(task);
+  const goodLog = meta.minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null }));
+  const good = { answer: task.expected, toolLog: goodLog };
+  assert.equal((await scoreOne(task.id, good)).score, 1, `${task.id} good`);
+  const expectedThink = meta.thinkMs * (meta.minimalCalls.length + 1);
+  const expectedTool = meta.minimalCalls.reduce((sum, call) => sum + meta.latencyMs[call.name], 0);
+  assert.equal(totalTimeMs(task, goodLog), expectedThink + expectedTool);
+  const paraphrases = [
+    `The answer is ${task.expected}.`,
+    `Answer: ${task.expected}`,
+    `**${task.expected}**`,
+    `${task.expected}`,
+    String(task.expected).toLowerCase(),
+  ];
+  for (const text of paraphrases) {
+    assert.equal((await scoreOne(task.id, { answer: text, toolLog: goodLog })).score, 1, `${task.id} paraphrase ${text}`);
+  }
+  const measuredLate = { answer: task.expected, toolLog: goodLog, finalState: { clock: "measured", turnTimesMs: [meta.deadlineMs + 1] } };
+  assert.equal((await scoreOne(task.id, measuredLate)).score, 0, `${task.id} measured late`);
+  const declaredSame = { answer: task.expected, toolLog: goodLog, finalState: { clock: "declared", turnTimesMs: [meta.deadlineMs + 1] } };
+  assert.equal(totalTimeMs(task, declaredSame), expectedThink + expectedTool);
+  assert.equal((await scoreOne(task.id, declaredSame)).score, 1, `${task.id} declared clock`);
+  const others = meta.candidates.filter((value) => value.toLowerCase() !== String(task.expected).toLowerCase());
+  const describeEnv = new LatencyBudgetEnvironment();
+  describeEnv.reset(task, 1);
+  const described = describeEnv.callTool("describe_tools", {});
+  for (const tool of described.result.tools) {
+    const expectedMs = tool.name === "describe_tools" ? DESCRIBE_TOOLS_MS : (meta.latencyMs[tool.name] ?? null);
+    assert.equal(tool.latencyMs, expectedMs, `${task.id} describe_tools ${tool.name}`);
+  }
+  const describeOnlyLog = [{ name: "describe_tools", args: {}, result: null }];
+  assert.equal(totalTimeMs(task, describeOnlyLog), meta.thinkMs * 2 + DESCRIBE_TOOLS_MS, `${task.id} describe_tools charge`);
+  const leakTask = { ...task, expected: "4242", metadata: { ...task.metadata, latencyMs: { lookup: 4242 }, candidates: ["4242"] } };
+  assert.equal(isCorrect(leakTask, { answer: "4242", toolLog: describeOnlyLog }), false, `${task.id} describe_tools is not evidence`);
+  const episodeEnv = new LatencyBudgetEnvironment({ clock: "measured" });
+  episodeEnv.reset(task, 1);
+  for (const call of meta.minimalCalls) episodeEnv.callTool(call.name, call.args);
+  const episodeState = episodeEnv.state();
+  assert.equal(episodeState.clock, "measured", `${task.id} state clock`);
+  assert.equal(episodeState.turnTimesMs.length, meta.minimalCalls.length + 1, `${task.id} state turn count`);
+  assert.ok(episodeState.turnTimesMs.every((gap) => Number.isFinite(gap) && gap >= 0), `${task.id} state turns finite`);
+  const badAnswers = [
+    {},
+    { answer: "xyzzy-not-an-answer" },
+    { answer: "yes" },
+    { answer: "yes", toolLog: [{ name: "lookup", args: { key: "Nobody Here" }, result: null }] },
+    { answer: task.expected, toolLog: [] },
+    { answer: task.expected, toolLog: [{ name: "search_docs", args: { query: "   " }, result: null }] },
+    { answer: task.expected, toolLog: [{ name: "search_docs", args: { query: String(task.expected) }, result: null }] },
+  ];
+  for (const bad of badAnswers) assert.equal((await scoreOne(task.id, bad)).score, 0, `${task.id} bad answer`);
+  if (others.length > 0) {
+    gamedChecked++;
+    const gamed = [
+      { answer: meta.candidates.join(", "), toolLog: goodLog },
+      { answer: `${task.expected} or ${others[0]}`, toolLog: goodLog },
+      { answer: `${others[0]}`, toolLog: goodLog },
+    ];
+    for (const bad of gamed) assert.equal((await scoreOne(task.id, bad)).score, 0, `${task.id} gamed ${bad.answer}`);
+  }
+  const curve = sweepDeadlines(task, good);
+  assert.deepEqual(curve.map((point) => point.factor), [0.5, 1, 2, 4]);
+  for (let i = 1; i < curve.length; i++) assert.ok(curve[i].score >= curve[i - 1].score);
+  assert.equal(curve[1].score, 1, `${task.id} curve 1x`);
+  const total = totalTimeMs(task, goodLog);
+  assert.equal(curve[0].score, total <= Math.round(meta.deadlineMs * 0.5) ? 1 : 0, `${task.id} curve 0.5x`);
+  const lateLog = [...goodLog];
+  while (totalTimeMs(task, lateLog) <= meta.deadlineMs && lateLog.length < goodLog.length + 24) {
+    lateLog.push({ name: "search_docs", args: { query: "zzzz-no-match" }, result: null });
+  }
+  assert.ok(totalTimeMs(task, lateLog) > meta.deadlineMs, `${task.id} padding exceeded deadline`);
+  const late = { answer: task.expected, toolLog: lateLog };
+  assert.equal(isCorrect(task, late), true, `${task.id} padded still correct`);
+  assert.equal((await scoreOne(task.id, late)).score, 0, `${task.id} padded late`);
+}
+assert.ok(gamedChecked >= 30, `expected gamed checks on most tasks, got ${gamedChecked}`);
+
+const hidden = await execFile(process.execPath, ["scripts/gen-tasks.mjs", "--split", "hidden"]);
+assert.match(hidden.stdout, /tasks\.hidden\.jsonl/);
+const hiddenTasks = (await readFile("artifacts/tasks.hidden.jsonl", "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+assert.equal(hiddenTasks.length, 36);
+const publicById = new Map(tasks.map((task) => [task.id, task]));
+let differentPrompts = 0; let differentAnswers = 0;
+for (const hiddenTask of hiddenTasks) {
+  assert.ok(hiddenTask.id.startsWith("h-"), `${hiddenTask.id} lacks the h- hidden prefix`);
+  assert.equal(publicById.get(hiddenTask.id), undefined, `${hiddenTask.id} collides with a public id`);
+  const publicTask = publicById.get(hiddenTask.id.slice(2));
+  assert.ok(publicTask !== undefined, `${hiddenTask.id} has no public counterpart`);
+  if (hiddenTask.prompt !== publicTask.prompt) differentPrompts++;
+  if (String(hiddenTask.expected) !== String(publicTask.expected)) differentAnswers++;
+  assert.ok(Array.isArray(hiddenTask.metadata.candidates) && hiddenTask.metadata.candidates.length >= 2);
+}
+assert.ok(differentPrompts >= 30, `only ${differentPrompts} hidden prompts differ`);
+assert.ok(differentAnswers >= 30, `only ${differentAnswers} hidden answers differ`);
+
+// --tasks runs a different tasks file end to end, --clock picks the billing mode
+const tasksRun = await execFile(process.execPath, ["dist/cli.js", "run", "--tasks", "artifacts/tasks.hidden.jsonl", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 8_000_000 });
+const tasksReport = JSON.parse(tasksRun.stdout);
+assert.equal(tasksReport.rows.length, 36);
+assert.equal(tasksReport.latency.rows, 36);
+assert.equal(tasksReport.latency.clocks.measured, 36);
+// latencyReport must fail loudly when a report names task ids its source
+// does not know (a hidden report scored against the public set read 0/0/0/0).
+await assert.rejects(() => latencyReport(tasksReport), /unknown to the source/);
+const hiddenSummary = await latencyReport(tasksReport, hiddenTasks);
+assert.equal(hiddenSummary.latency.rows, 36);
+assert.deepEqual(hiddenSummary.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
+const declaredRun = await execFile(process.execPath, ["dist/cli.js", "run", "--clock", "declared", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 8_000_000 });
+const declaredReport = JSON.parse(declaredRun.stdout);
+assert.equal(declaredReport.latency.clocks.declared, 36);
+
+// Deadline ranges quoted in docs and metadata are generated from the data.
+const rangeText = formatDeadlineRanges(tasks);
+assert.ok(rangeText.length > 0);
+assert.ok(benchmark.definition.whatItMeasures.includes(rangeText), `whatItMeasures missing ${rangeText}`);
+for (const doc of ["README.md", "llms.txt", "docs/grading.md", "CHANGELOG.md"]) {
+  const prose = (await readFile(doc, "utf8")).replace(/\s+/g, " ");
+  assert.ok(prose.includes(rangeText), `${doc} missing deadline ranges "${rangeText}"`);
+}
+
+const timingEntries = report.rows.map((row) => {
+  const task = byId.get(row.taskId);
+  const log = row.submission?.toolLog ?? [];
+  const total = totalTimeMs(task, log);
+  const correct = isCorrect(task, row.submission ?? {});
+  return { totalTimeMs: total, correct, onTime: total <= latencyMeta(task).deadlineMs, score: row.score };
+});
+const timing = summarizeTimes(timingEntries);
+assert.equal(timing.count, 36);
+assert.ok(timing.p50 <= timing.p95);
+assert.equal(timing.lateButCorrect, timingEntries.filter((e) => e.correct && !e.onTime).length);
+const voice01 = byId.get("voice-01");
+const voice01GoodLog = latencyMeta(voice01).minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null }));
+const sampleCurve = sweepDeadlines(voice01, { answer: voice01.expected, toolLog: voice01GoodLog });
+// A self-reported measured clock claims a 2 ms model total; the declared bill is thinkMs per turn.
+const claimedFast = { answer: voice01.expected, toolLog: voice01GoodLog, finalState: { clock: "measured", turnTimesMs: [1, 1] } };
 
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -28,12 +182,22 @@ async function get(path) {
 try {
   for (let attempt = 0; attempt < 100; attempt++) { try { await get("/health"); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); } }
   const health = await get("/health"); assert.equal(health.response.status, 200);
-  const listed = await get("/v1/tasks"); assert.equal(listed.value.tasks.length, 2);
-  const shown = await get("/v1/tasks/starter-1"); assert.equal(shown.value.task.id, "starter-1");
-  const score = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: "starter-1", submission: report.rows[0].submission }) });
+  const listed = await get("/v1/tasks"); assert.equal(listed.value.tasks.length, 36);
+  const shown = await get("/v1/tasks/voice-01"); assert.equal(shown.value.task.id, "voice-01");
+  const score = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: "voice-01", submission: report.rows[0].submission }) });
   routes["POST /v1/score"] = score.status; assert.equal(score.status, 200);
+  const scoredBody = await score.json();
+  assert.equal(typeof scoredBody.latency?.totalTimeMs, "number", "/v1/score must return a latency block");
+  assert.equal(scoredBody.latency.deadlineMs, latencyMeta(voice01).deadlineMs);
+  const claimed = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: "voice-01", submission: claimedFast }) });
+  const claimedBody = await claimed.json();
+  assert.equal(claimed.status, 200);
+  assert.equal(claimedBody.latency.clock, "declared", "server must not trust a self-reported measured clock");
+  assert.equal(claimedBody.latency.totalTimeMs, totalTimeMs(voice01, { answer: voice01.expected, toolLog: voice01GoodLog }));
+  assert.equal(claimedBody.latency.onTime, true);
+  assert.equal(claimedBody.score, 1);
   assert.equal((await get("/v1/provenance")).response.status, 200);
-  assert.equal((await get("/v1/index-entry")).value.task_count, 2);
+  assert.equal((await get("/v1/index-entry")).value.task_count, 36);
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
 
 const transport = new StdioClientTransport({ command: process.execPath, args: ["dist/cli.js", "mcp"], cwd: process.cwd(), stderr: "pipe" });
@@ -43,18 +207,38 @@ try {
   const available = await client.listTools(); toolNames = available.tools.map((tool) => tool.name).sort();
   assert.deepEqual(toolNames, ["get_provenance", "get_task", "list_tasks", "run_benchmark", "score_answer"]);
   const calls = [
-    ["list_tasks", {}], ["get_task", { taskId: "starter-1" }],
-    ["score_answer", { taskId: "starter-1", submission: report.rows[0].submission }],
-    ["get_provenance", {}], ["run_benchmark", { model: "offline" }],
+    ["list_tasks", {}], ["get_task", { taskId: "voice-01" }],
+    ["score_answer", { taskId: "voice-01", submission: report.rows[0].submission }],
+    ["get_provenance", {}],
   ];
   for (const [name, args] of calls) {
     const result = await client.callTool({ name, arguments: args });
-    if (name === "run_benchmark") assert.equal(result.isError, true); else assert.notEqual(result.isError, true);
+    assert.notEqual(result.isError, true);
   }
+  // score_answer strips a self-reported measured clock and returns a latency block.
+  const scoreCall = await client.callTool({ name: "score_answer", arguments: { taskId: "voice-01", submission: claimedFast } });
+  const scoreValue = JSON.parse(scoreCall.content[0].text);
+  assert.equal(scoreValue.latency.clock, "declared", "MCP must not trust a self-reported measured clock");
+  assert.equal(scoreValue.latency.totalTimeMs, totalTimeMs(voice01, { answer: voice01.expected, toolLog: voice01GoodLog }));
+  // run_benchmark needs a key for openrouter; the mock provider runs offline.
+  const noKeyRun = await client.callTool({ name: "run_benchmark", arguments: { model: "offline" } });
+  assert.equal(noKeyRun.isError, true);
+  const mockRun = await client.callTool({ name: "run_benchmark", arguments: { model: "offline", provider: "mock" } });
+  assert.notEqual(mockRun.isError, true);
+  const mcpReport = JSON.parse(mockRun.content[0].text);
+  assert.equal(mcpReport.latency.rows, 36, "MCP run_benchmark must return the latency block");
+  assert.ok(mcpReport.latency.p50Ms <= mcpReport.latency.p95Ms);
+  assert.deepEqual(mcpReport.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
 } finally { await client.close(); }
 
-const artifact = { task_count: report.rows.length, scores: report.rows.map((row) => row.score), route_status_codes: routes, tool_names: toolNames };
+assert.equal(await readFile("data/PROVENANCE.md", "utf8"), provenanceMarkdown(benchmark));
+const artifact = {
+  task_count: report.rows.length, scores: report.rows.map((row) => row.score),
+  route_status_codes: routes, tool_names: toolNames,
+  timing: { p50_ms: timing.p50, p95_ms: timing.p95, late_but_correct: timing.lateButCorrect },
+  latency: report.latency,
+  sample_curve_voice_01: sampleCurve,
+};
 await mkdir("artifacts", { recursive: true });
 await writeFile("artifacts/e2e-report.json", `${JSON.stringify(artifact, null, 2)}\n`);
-assert.match(await readFile("data/PROVENANCE.md", "utf8"), /Seeded starter task generator/);
-console.log(`e2e: ${artifact.task_count} tasks, ${Object.keys(routes).length} routes, ${toolNames.length} tools -> all surfaces passed, ok`);
+console.log(`e2e: ${artifact.task_count} tasks, ${Object.keys(routes).length} routes, ${toolNames.length} tools, p50 ${timing.p50}ms p95 ${timing.p95}ms -> all surfaces passed, ok`);
