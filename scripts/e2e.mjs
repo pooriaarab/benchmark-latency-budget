@@ -18,6 +18,13 @@ const report = JSON.parse(cli.stdout);
 assert.equal(report.rows.length, 36);
 assert.ok(report.rows.some((row) => row.score === 1));
 assert.ok(report.rows.some((row) => row.score === 0));
+assert.equal(report.latency.rows, 36);
+assert.equal(typeof report.latency.p50Ms, "number");
+assert.ok(report.latency.p50Ms <= report.latency.p95Ms);
+assert.deepEqual(report.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
+for (let i = 1; i < report.latency.deadlineCurve.length; i++) {
+  assert.ok(report.latency.deadlineCurve[i].meanScore >= report.latency.deadlineCurve[i - 1].meanScore);
+}
 
 const tasks = await benchmark.listTasks();
 assert.equal(tasks.length, 36);
@@ -99,6 +106,16 @@ for (const hiddenTask of hiddenTasks) {
 assert.ok(differentPrompts >= 30, `only ${differentPrompts} hidden prompts differ`);
 assert.ok(differentAnswers >= 30, `only ${differentAnswers} hidden answers differ`);
 
+// --tasks runs a different tasks file end to end, --clock picks the billing mode
+const tasksRun = await execFile(process.execPath, ["dist/cli.js", "run", "--tasks", "artifacts/tasks.hidden.jsonl", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 8_000_000 });
+const tasksReport = JSON.parse(tasksRun.stdout);
+assert.equal(tasksReport.rows.length, 36);
+assert.equal(tasksReport.latency.rows, 36);
+assert.equal(tasksReport.latency.clocks.measured, 36);
+const declaredRun = await execFile(process.execPath, ["dist/cli.js", "run", "--clock", "declared", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 8_000_000 });
+const declaredReport = JSON.parse(declaredRun.stdout);
+assert.equal(declaredReport.latency.clocks.declared, 36);
+
 const timingEntries = report.rows.map((row) => {
   const task = byId.get(row.taskId);
   const log = row.submission?.toolLog ?? [];
@@ -156,6 +173,7 @@ const artifact = {
   task_count: report.rows.length, scores: report.rows.map((row) => row.score),
   route_status_codes: routes, tool_names: toolNames,
   timing: { p50_ms: timing.p50, p95_ms: timing.p95, late_but_correct: timing.lateButCorrect },
+  latency: report.latency,
   sample_curve_voice_01: sampleCurve,
 };
 await mkdir("artifacts", { recursive: true });
