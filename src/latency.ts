@@ -77,8 +77,7 @@ export function gradeLatency(task: Task, submission: Trace, seed = 1): TaskScore
   const meta = latencyMeta(task);
   const toolLog = submission.toolLog ?? [];
   const total = totalTimeMs(task, toolLog);
-  const lateButCorrect = false;
-  const details = { budgetClass: meta.budgetClass, deadlineMs: meta.deadlineMs, totalTimeMs: total, toolCalls: toolLog.length, evidenceFound: evidenceFound(task, toolLog, seed), lateButCorrect };
+  const details = { budgetClass: meta.budgetClass, deadlineMs: meta.deadlineMs, totalTimeMs: total, toolCalls: toolLog.length, evidenceFound: evidenceFound(task, toolLog, seed), lateButCorrect: false };
   if (normalizeAnswer(submission.answer) === "") {
     return { score: 0, reason: "No answer was submitted.", details: details as unknown as JsonValue };
   }

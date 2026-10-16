@@ -52,6 +52,7 @@ export class LatencyBudgetEnvironment implements Environment {
     if (name === "search_docs") {
       const query = String(args["query"] ?? "").toLowerCase();
       const words = query.split(/\s+/).filter((w) => w.length > 0);
+      if (words.length === 0) return { result: { query: args["query"] ?? "", results: [] } };
       const docs = fixtures.docs ?? [];
       const results = docs.filter((doc) => {
         const hay = `${doc.title} ${doc.topic}`.toLowerCase();
