@@ -1,8 +1,8 @@
 {
   "name": "benchmark-latency-budget",
   "version": "0.1.0",
-  "description": "Quality that only counts if it arrives before the deadline.",
-  "keywords": ["ai-benchmark", "llm-evaluation", "model-evaluation", "evals", "grading", "openrouter", "openai", "mcp", "typescript", "agent-benchmark"],
+  "description": "Agent benchmark: answer quality that only counts inside a latency deadline.",
+  "keywords": ["ai-benchmark", "llm-evaluation", "model-evaluation", "evals", "grading", "openrouter", "openai", "mcp", "typescript", "agent-benchmark", "latency", "response-time", "voice-agents"],
   "homepage": "https://aibenchmarkindex.com/benchmarks/benchmark-latency-budget",
   "bugs": "https://github.com/pooriaarab/benchmark-latency-budget/issues",
   "repository": { "type": "git", "url": "git+https://github.com/pooriaarab/benchmark-latency-budget.git" },
@@ -14,7 +14,7 @@
     "./api": { "types": "./dist/api.d.ts", "import": "./dist/api.js" }
   },
   "bin": { "benchmark-latency-budget": "./dist/cli.js" },
-  "files": ["dist", "data", "README.md", "AGENTS.md", "llms.txt", "server.json", "LICENSE"],
+  "files": ["dist", "data", "README.md", "AGENTS.md", "llms.txt", "server.json", "LICENSE", "CHANGELOG.md"],
   "engines": { "node": ">=20" }, "sideEffects": false,
   "scripts": {
     "lint": "oxlint src scripts", "typecheck": "tsc --noEmit", "build": "tsup",
