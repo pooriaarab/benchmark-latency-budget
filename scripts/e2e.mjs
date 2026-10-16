@@ -57,6 +57,15 @@ for (const task of tasks) {
   }
   const describeOnlyLog = [{ name: "describe_tools", args: {}, result: null }];
   assert.equal(totalTimeMs(task, describeOnlyLog), meta.thinkMs * 2 + DESCRIBE_TOOLS_MS, `${task.id} describe_tools charge`);
+  const leakTask = { ...task, expected: "4242", metadata: { ...task.metadata, latencyMs: { lookup: 4242 }, candidates: ["4242"] } };
+  assert.equal(isCorrect(leakTask, { answer: "4242", toolLog: describeOnlyLog }), false, `${task.id} describe_tools is not evidence`);
+  const episodeEnv = new LatencyBudgetEnvironment({ clock: "measured" });
+  episodeEnv.reset(task, 1);
+  for (const call of meta.minimalCalls) episodeEnv.callTool(call.name, call.args);
+  const episodeState = episodeEnv.state();
+  assert.equal(episodeState.clock, "measured", `${task.id} state clock`);
+  assert.equal(episodeState.turnTimesMs.length, meta.minimalCalls.length + 1, `${task.id} state turn count`);
+  assert.ok(episodeState.turnTimesMs.every((gap) => Number.isFinite(gap) && gap >= 0), `${task.id} state turns finite`);
   const badAnswers = [
     {},
     { answer: "xyzzy-not-an-answer" },
