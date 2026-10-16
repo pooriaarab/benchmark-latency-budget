@@ -6,8 +6,9 @@ Package: https://www.npmjs.com/package/benchmark-latency-budget
 Repository: https://github.com/pooriaarab/benchmark-latency-budget
 Directory: https://private-repo-337e.com/benchmarks/benchmark-latency-budget
 
-36 episode tasks across voice (700ms), UI (2s), and background (10s)
-deadlines. Agents use lookup, calendar_get, and search_docs tools; each call
+36 episode tasks; every task sets its own deadline at 1.5-2x its shortest
+correct path: voice 447-641 ms, UI 875-1494 ms, background 2025-3714 ms.
+Agents use lookup, calendar_get, and search_docs tools; each call
 burns virtual milliseconds from a seeded per-task schedule.
 
 ## Exports

@@ -71,7 +71,10 @@ export async function score(taskId: string, submission: Trace) {
 export { DESCRIBE_TOOLS_MS, LatencyBudgetEnvironment, LATENCY_TOOLS } from "./simulator.js";
 export type { ClockMode } from "./simulator.js";
 export {
-  CURVE_FACTORS, UNKNOWN_TOOL_MS, answerCandidates, candidateValues, evidenceFound, gradeLatency, isCorrect,
-  latencyMeta, mentionsValue, normalizeAnswer, percentile, summarizeTimes, sweepDeadlines, timeBreakdown, totalTimeMs,
+  CURVE_FACTORS, UNKNOWN_TOOL_MS, answerCandidates, candidateValues, deadlineRanges, evidenceFound,
+  formatDeadlineRanges, gradeLatency, isCorrect, latencyMeta, mentionsValue, normalizeAnswer, percentile,
+  summarizeTimes, sweepDeadlines, timeBreakdown, totalTimeMs,
 } from "./latency.js";
-export type { CurvePoint, LatencyMeta, MinimalCall, TimeBreakdown, TimeSummary } from "./latency.js";
+export type { CurvePoint, DeadlineRange, LatencyMeta, MinimalCall, TimeBreakdown, TimeSummary } from "./latency.js";
+export { serverSubmission, submissionLatency } from "./server.js";
+export type { SubmissionLatency } from "./server.js";

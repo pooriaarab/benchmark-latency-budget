@@ -8,8 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { provenanceMarkdown } from "benchmark-core";
 import {
-  benchmark, DESCRIBE_TOOLS_MS, isCorrect, LatencyBudgetEnvironment, latencyMeta, latencyReport,
-  score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
+  benchmark, DESCRIBE_TOOLS_MS, formatDeadlineRanges, isCorrect, LatencyBudgetEnvironment, latencyMeta,
+  latencyReport, score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
 } from "../dist/index.js";
 const execFile = promisify(execFileCallback);
 
@@ -143,6 +143,15 @@ const declaredRun = await execFile(process.execPath, ["dist/cli.js", "run", "--c
 const declaredReport = JSON.parse(declaredRun.stdout);
 assert.equal(declaredReport.latency.clocks.declared, 36);
 
+// Deadline ranges quoted in docs and metadata are generated from the data.
+const rangeText = formatDeadlineRanges(tasks);
+assert.ok(rangeText.length > 0);
+assert.ok(benchmark.definition.whatItMeasures.includes(rangeText), `whatItMeasures missing ${rangeText}`);
+for (const doc of ["README.md", "llms.txt", "docs/grading.md", "CHANGELOG.md"]) {
+  const prose = (await readFile(doc, "utf8")).replace(/\s+/g, " ");
+  assert.ok(prose.includes(rangeText), `${doc} missing deadline ranges "${rangeText}"`);
+}
+
 const timingEntries = report.rows.map((row) => {
   const task = byId.get(row.taskId);
   const log = row.submission?.toolLog ?? [];
@@ -155,7 +164,10 @@ assert.equal(timing.count, 36);
 assert.ok(timing.p50 <= timing.p95);
 assert.equal(timing.lateButCorrect, timingEntries.filter((e) => e.correct && !e.onTime).length);
 const voice01 = byId.get("voice-01");
-const sampleCurve = sweepDeadlines(voice01, { answer: voice01.expected, toolLog: latencyMeta(voice01).minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null })) });
+const voice01GoodLog = latencyMeta(voice01).minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null }));
+const sampleCurve = sweepDeadlines(voice01, { answer: voice01.expected, toolLog: voice01GoodLog });
+// A self-reported measured clock claims a 2 ms model total; the declared bill is thinkMs per turn.
+const claimedFast = { answer: voice01.expected, toolLog: voice01GoodLog, finalState: { clock: "measured", turnTimesMs: [1, 1] } };
 
 const probe = createNetServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -174,6 +186,16 @@ try {
   const shown = await get("/v1/tasks/voice-01"); assert.equal(shown.value.task.id, "voice-01");
   const score = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: "voice-01", submission: report.rows[0].submission }) });
   routes["POST /v1/score"] = score.status; assert.equal(score.status, 200);
+  const scoredBody = await score.json();
+  assert.equal(typeof scoredBody.latency?.totalTimeMs, "number", "/v1/score must return a latency block");
+  assert.equal(scoredBody.latency.deadlineMs, latencyMeta(voice01).deadlineMs);
+  const claimed = await fetch(`${base}/v1/score`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskId: "voice-01", submission: claimedFast }) });
+  const claimedBody = await claimed.json();
+  assert.equal(claimed.status, 200);
+  assert.equal(claimedBody.latency.clock, "declared", "server must not trust a self-reported measured clock");
+  assert.equal(claimedBody.latency.totalTimeMs, totalTimeMs(voice01, { answer: voice01.expected, toolLog: voice01GoodLog }));
+  assert.equal(claimedBody.latency.onTime, true);
+  assert.equal(claimedBody.score, 1);
   assert.equal((await get("/v1/provenance")).response.status, 200);
   assert.equal((await get("/v1/index-entry")).value.task_count, 36);
 } finally { if (server.exitCode === null) { server.kill("SIGTERM"); await once(server, "exit"); } }
@@ -187,12 +209,26 @@ try {
   const calls = [
     ["list_tasks", {}], ["get_task", { taskId: "voice-01" }],
     ["score_answer", { taskId: "voice-01", submission: report.rows[0].submission }],
-    ["get_provenance", {}], ["run_benchmark", { model: "offline" }],
+    ["get_provenance", {}],
   ];
   for (const [name, args] of calls) {
     const result = await client.callTool({ name, arguments: args });
-    if (name === "run_benchmark") assert.equal(result.isError, true); else assert.notEqual(result.isError, true);
+    assert.notEqual(result.isError, true);
   }
+  // score_answer strips a self-reported measured clock and returns a latency block.
+  const scoreCall = await client.callTool({ name: "score_answer", arguments: { taskId: "voice-01", submission: claimedFast } });
+  const scoreValue = JSON.parse(scoreCall.content[0].text);
+  assert.equal(scoreValue.latency.clock, "declared", "MCP must not trust a self-reported measured clock");
+  assert.equal(scoreValue.latency.totalTimeMs, totalTimeMs(voice01, { answer: voice01.expected, toolLog: voice01GoodLog }));
+  // run_benchmark needs a key for openrouter; the mock provider runs offline.
+  const noKeyRun = await client.callTool({ name: "run_benchmark", arguments: { model: "offline" } });
+  assert.equal(noKeyRun.isError, true);
+  const mockRun = await client.callTool({ name: "run_benchmark", arguments: { model: "offline", provider: "mock" } });
+  assert.notEqual(mockRun.isError, true);
+  const mcpReport = JSON.parse(mockRun.content[0].text);
+  assert.equal(mcpReport.latency.rows, 36, "MCP run_benchmark must return the latency block");
+  assert.ok(mcpReport.latency.p50Ms <= mcpReport.latency.p95Ms);
+  assert.deepEqual(mcpReport.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
 } finally { await client.close(); }
 
 assert.equal(await readFile("data/PROVENANCE.md", "utf8"), provenanceMarkdown(benchmark));
