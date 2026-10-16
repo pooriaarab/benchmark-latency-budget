@@ -148,6 +148,8 @@ function entryArgs(entry: ToolLogEntry): Record<string, JsonValue> {
  * True when a successful re-derived tool result contains the expected answer.
  * A match is ignored when the call's own arguments already contain the
  * answer, so feeding the answer back as a query is not evidence.
+ * `describe_tools` returns the latency schedule, never task evidence, so it
+ * is skipped too.
  */
 export function evidenceFound(task: Task, toolLog: readonly ToolLogEntry[], seed = 1): boolean {
   const want = normalizeAnswer(task.expected);
@@ -158,6 +160,7 @@ export function evidenceFound(task: Task, toolLog: readonly ToolLogEntry[], seed
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
     const entry = raw as ToolLogEntry;
     const name = typeof entry.name === "string" ? entry.name : "";
+    if (name === "describe_tools") continue;
     const args = entryArgs(entry);
     if (JSON.stringify(args).toLowerCase().includes(want)) continue;
     const outcome = env.callTool(name, args);
