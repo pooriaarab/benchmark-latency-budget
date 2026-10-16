@@ -98,10 +98,11 @@ Substrings inside longer tokens do not match (`18929` is not `8929`).
 ## Bad-answer and good-answer passes
 
 The E2E asserts every one of these on every task: empty answer, random
-string, always `yes`, every candidate value listed, an ungrounded correct
-answer, and a correct answer padded past the deadline each score 0; honest
+string, always `yes`, an ungrounded correct answer, and a correct answer padded past the deadline each score 0; honest
 paraphrases (`The answer is X.`, `**X**`, `Answer: X`) and the mock good
-policy (minimal correct calls plus the expected answer) score 1. A hand
+policy (minimal correct calls plus the expected answer) score 1. No shipped
+task declares `metadata.candidates` yet, so the answer-stuffing guard is
+pinned on a copy of each task with a decoy candidate added. A hand
 built trace with `clock: "measured"` and a 1501 ms turn on a 700 ms voice
 task scores 0 while the same trace marked `declared` stays billable. The
 deadline boundary is pinned too: the same good trace scores 1 at 1x

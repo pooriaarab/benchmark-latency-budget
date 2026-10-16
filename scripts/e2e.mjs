@@ -46,6 +46,9 @@ for (const task of samples) {
   const declaredSame = { answer: task.expected, toolLog: goodLog, finalState: { clock: "declared", turnTimesMs: [meta.deadlineMs + 1] } };
   assert.equal(totalTimeMs(task, declaredSame), expectedThink + expectedTool);
   assert.equal((await scoreOne(task.id, declaredSame)).score, 1, `${task.id} declared clock`);
+  const stuffed = { ...task, metadata: { ...task.metadata, candidates: [String(task.expected), "decoy-value-zz"] } };
+  assert.equal(isCorrect(stuffed, { answer: `${task.expected} or decoy-value-zz`, toolLog: goodLog }), false, `${task.id} stuffed answer`);
+  assert.equal(isCorrect(stuffed, { answer: `The answer is ${task.expected}.`, toolLog: goodLog }), true, `${task.id} candidates paraphrase`);
   const badAnswers = [
     {},
     { answer: "xyzzy-not-an-answer" },
