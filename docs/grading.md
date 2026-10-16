@@ -28,7 +28,10 @@ virtual total so results do not depend on the machine they ran on.
    hiding wasted calls. Guard: unknown tools cost a 150 ms default.
 2. **Ungrounded guess:** the answer matches but no tool output contains it
    (the agent guessed without calling tools). Guard: require evidence, a
-   tool result whose JSON contains the expected string.
+   tool result whose JSON contains the expected string. A match is ignored
+   when the call's own arguments already hold the answer, and `search_docs`
+   never echoes the query, so feeding the answer back as a query proves
+   nothing.
 3. **Case and whitespace drift:** `Room 3B` vs `3b ` marked wrong. Guard:
    compare trimmed, case-insensitive strings.
 4. **Empty or missing answer:** no `answer` field, or an empty string.
