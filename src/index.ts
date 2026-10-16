@@ -24,10 +24,18 @@ export interface LatencyRunReport extends RunReport {
 export async function latencyReport(report: RunReport, source: Benchmark | readonly Task[] = benchmark): Promise<LatencyRunReport> {
   const tasks = "listTasks" in source ? await source.listTasks() : source;
   const byId = new Map(tasks.map((task) => [task.id, task]));
+  const unknown = [...new Set(report.rows.filter((row) => !byId.has(row.taskId)).map((row) => row.taskId))];
+  if (unknown.length > 0) {
+    throw new Error(
+      `latencyReport: ${unknown.length} task id(s) in the report are unknown to the source ` +
+      `(${unknown.slice(0, 5).join(", ")}${unknown.length > 5 ? ", ..." : ""}). ` +
+      `Pass the benchmark or task list the report was produced from.`,
+    );
+  }
   const entries: Array<{ totalMs: number; deadlineMs: number; correct: boolean; clock: "measured" | "declared" }> = [];
   for (const row of report.rows) {
-    const task = byId.get(row.taskId);
-    if (task === undefined || row.submission === undefined) continue;
+    const task = byId.get(row.taskId) as Task;
+    if (row.submission === undefined) continue;
     const time = timeBreakdown(task, row.submission);
     entries.push({
       totalMs: time.totalMs, deadlineMs: latencyMeta(task).deadlineMs,

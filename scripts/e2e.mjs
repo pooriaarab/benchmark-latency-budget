@@ -8,8 +8,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { provenanceMarkdown } from "benchmark-core";
 import {
-  benchmark, DESCRIBE_TOOLS_MS, isCorrect, LatencyBudgetEnvironment, latencyMeta, score as scoreOne,
-  summarizeTimes, sweepDeadlines, totalTimeMs,
+  benchmark, DESCRIBE_TOOLS_MS, isCorrect, LatencyBudgetEnvironment, latencyMeta, latencyReport,
+  score as scoreOne, summarizeTimes, sweepDeadlines, totalTimeMs,
 } from "../dist/index.js";
 const execFile = promisify(execFileCallback);
 
@@ -116,8 +116,10 @@ assert.equal(hiddenTasks.length, 36);
 const publicById = new Map(tasks.map((task) => [task.id, task]));
 let differentPrompts = 0; let differentAnswers = 0;
 for (const hiddenTask of hiddenTasks) {
-  const publicTask = publicById.get(hiddenTask.id);
-  assert.ok(publicTask !== undefined, `${hiddenTask.id} missing from public ids`);
+  assert.ok(hiddenTask.id.startsWith("h-"), `${hiddenTask.id} lacks the h- hidden prefix`);
+  assert.equal(publicById.get(hiddenTask.id), undefined, `${hiddenTask.id} collides with a public id`);
+  const publicTask = publicById.get(hiddenTask.id.slice(2));
+  assert.ok(publicTask !== undefined, `${hiddenTask.id} has no public counterpart`);
   if (hiddenTask.prompt !== publicTask.prompt) differentPrompts++;
   if (String(hiddenTask.expected) !== String(publicTask.expected)) differentAnswers++;
   assert.ok(Array.isArray(hiddenTask.metadata.candidates) && hiddenTask.metadata.candidates.length >= 2);
@@ -131,6 +133,12 @@ const tasksReport = JSON.parse(tasksRun.stdout);
 assert.equal(tasksReport.rows.length, 36);
 assert.equal(tasksReport.latency.rows, 36);
 assert.equal(tasksReport.latency.clocks.measured, 36);
+// latencyReport must fail loudly when a report names task ids its source
+// does not know (a hidden report scored against the public set read 0/0/0/0).
+await assert.rejects(() => latencyReport(tasksReport), /unknown to the source/);
+const hiddenSummary = await latencyReport(tasksReport, hiddenTasks);
+assert.equal(hiddenSummary.latency.rows, 36);
+assert.deepEqual(hiddenSummary.latency.deadlineCurve.map((point) => point.factor), [0.5, 1, 2, 4]);
 const declaredRun = await execFile(process.execPath, ["dist/cli.js", "run", "--clock", "declared", "--model", "offline", "--provider", "mock", "--json"], { maxBuffer: 8_000_000 });
 const declaredReport = JSON.parse(declaredRun.stdout);
 assert.equal(declaredReport.latency.clocks.declared, 36);
