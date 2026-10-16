@@ -32,10 +32,10 @@ export const benchmark = defineBenchmark({
     bad: (task) => task.kind === "episode" ? [{ content: "Skipped the tool." }] : [],
   },
   provenance: [{
-    name: "Seeded starter task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-latency-budget/blob/main/scripts/gen-tasks.mjs",
-    licence: "MIT", howToGet: "Run `node scripts/gen-tasks.mjs` from the repository root.", retrievedAt: "2026-10-15T00:00:00.000Z",
-    contaminationNotes: "Public starter tasks generated with seed 20261015. Keep final evaluation tasks in a separately seeded hidden split.",
-    refresh: "Change the seed, run the generator, and review the JSONL diff.",
+    name: "Seeded latency-budget task generator", kind: "synthetic", url: "https://github.com/pooriaarab/benchmark-latency-budget/blob/main/scripts/gen-tasks.mjs",
+    licence: "MIT", howToGet: "Run `node scripts/gen-tasks.mjs --seed 20261015` for the public tasks, or `node scripts/gen-tasks.mjs --seed <n> --split hidden` for a hidden split (written to gitignored artifacts/).", retrievedAt: "2026-10-16T00:00:00.000Z",
+    contaminationNotes: "Public tasks generated with seed 20261015, benchmark cutoff 2026-10-16. Public tasks may enter training data; use a separately seeded hidden split for final comparisons.",
+    refresh: "Pick a new seed, run the generator, review the JSONL diff. Regenerate quarterly or when saturation is shown.",
   }],
-  gradingMethod: "Exact match for single answers; deterministic state replay for episodes.",
+  gradingMethod: "qualityWithinBudget: exact answer (trimmed, case-insensitive) grounded in tool output, scored 1 only when total virtual time (thinkMs plus scheduled tool latencies) is within the task deadline. Reports p50/p95 time, lateButCorrect count, and a 0.5x-4x deadline curve.",
 });
