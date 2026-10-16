@@ -1,0 +1,19 @@
+# benchmark-latency-budget
+
+> Quality that only counts if it arrives before the deadline.
+
+Package: https://www.npmjs.com/package/benchmark-latency-budget
+Repository: https://github.com/pooriaarab/benchmark-latency-budget
+Directory: https://aibenchmarkindex.com/benchmarks/benchmark-latency-budget
+
+## Exports
+
+The root exports `benchmark`, `run`, and `score`. `benchmark-latency-budget/api` exports the fetch-style `handler`. `benchmark-latency-budget/mcp` exports MCP builders.
+
+## Commands
+
+The CLI supports list, show, run, score, card, provenance, index-entry, serve, and mcp. Use the mock provider for offline verification.
+
+## Verification
+
+Run `npm run ci:local`. The report is `artifacts/e2e-report.json`.
