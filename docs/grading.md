@@ -109,7 +109,12 @@ Substrings inside longer tokens do not match (`18929` is not `8929`).
     answer, so its result could ground a trace that never read real
     evidence. Guard: the evidence replay skips `describe_tools` results;
     they still cost their flat 25 ms.
-13. **Self-reported measured clock:** a submitted trace can claim
+13. **Report rows unknown to the source:** summarizing a run report with
+    the wrong task list (for example a hidden split against the public
+    source) used to skip every row and print a 0-row deadline curve.
+    Guard: `latencyReport` throws and names the unknown task ids; hidden
+    tasks carry `h-` prefixed ids so the two sets can never collide.
+14. **Self-reported measured clock:** a submitted trace can claim
     arbitrarily small `turnTimesMs` under `clock: "measured"`. Guard:
     `/v1/score` and MCP `score_answer` strip the claimed measured clock
     and bill declared `thinkMs` per turn; measured billing only counts
