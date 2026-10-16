@@ -94,6 +94,11 @@ Substrings inside longer tokens do not match (`18929` is not `8929`).
     latencies, fixed key order, seeded generator; the same seed always
     regenerates the same `tasks.jsonl`. Measured-mode totals depend on the
     machine by design.
+12. **Tool metadata mistaken for evidence:** `describe_tools` reports the
+    latency schedule, and a scheduled number can equal the expected
+    answer, so its result could ground a trace that never read real
+    evidence. Guard: the evidence replay skips `describe_tools` results;
+    they still cost their flat 25 ms.
 
 ## Bad-answer and good-answer passes
 
@@ -107,4 +112,8 @@ built trace with `clock: "measured"` and a 1501 ms turn on a 700 ms voice
 task scores 0 while the same trace marked `declared` stays billable. The
 deadline boundary is pinned too: the same good trace scores 1 at 1x
 deadline and 0 (late) at 0.5x when the half deadline falls below its total
-time.
+time. A `describe_tools`-only trace on a task whose latency schedule
+contains the expected value scores 0, because tool metadata is not
+evidence. A real episode's `state()` is pinned to `clock: "measured"`
+with `toolCalls + 1` finite `turnTimesMs`, so a dropped `#mark()` cannot
+under-bill silently.
