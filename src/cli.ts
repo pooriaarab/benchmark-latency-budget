@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import {
-  createCli, mockAdapter, openaiCompatAdapter, openrouterAdapter, renderMarkdown, run as runReport,
+  createCli, mockAdapter, openaiCompatAdapter, openrouterAdapter, renderMarkdown, run as runReport, serve,
   type Benchmark, type ModelAdapter, type RunOptions, type Task,
 } from "benchmark-core";
 import { benchmark, createLatencyBenchmark, latencyReport } from "./index.js";
+import { createApi } from "./api.js";
+import { startMcp } from "./mcp.js";
 import type { ClockMode } from "./simulator.js";
 
 const BIN = "benchmark-latency-budget";
@@ -72,6 +74,30 @@ async function runCommand(args: string[], bench: Benchmark<Task>): Promise<numbe
   return report.rows.some((row) => row.error) ? 2 : 0;
 }
 
+/** `serve` over the latency-aware API handler (latency block on /v1/score). */
+async function serveCommand(args: string[], bench: Benchmark<Task>): Promise<number> {
+  const jsonOutput = args.includes("--json");
+  const clean = args.filter((arg) => arg !== "--json");
+  const parsed = parseArgs({ args: clean, options: { host: { type: "string" } }, allowPositionals: true, strict: true });
+  if (parsed.positionals.length > 1) {
+    console.error("serve accepts at most one port.");
+    return 1;
+  }
+  const port = Number(parsed.positionals[0] ?? process.env.PORT ?? 3000);
+  const hostname = parsed.values.host ?? "127.0.0.1";
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    console.error("serve port must be an integer from 0 to 65535.");
+    return 1;
+  }
+  if (!hostname.trim()) {
+    console.error("--host must not be empty.");
+    return 1;
+  }
+  await serve(createApi(bench), { port, hostname });
+  console.log(jsonOutput ? JSON.stringify({ listening: port, host: hostname }) : `Listening on http://${hostname}:${port}`);
+  return 0;
+}
+
 async function main(): Promise<number> {
   const { rest, tasksPath, clock } = stripGlobalOptions(process.argv.slice(2));
   if (clock !== undefined && clock !== "measured" && clock !== "declared") {
@@ -87,6 +113,8 @@ async function main(): Promise<number> {
     : createLatencyBenchmark({ ...(tasksPath === undefined ? {} : { tasksPath }), ...(clock === undefined ? {} : { clock }) });
   try {
     if (rest[0] === "run") return await runCommand(rest.slice(1), bench);
+    if (rest[0] === "serve") return await serveCommand(rest.slice(1), bench);
+    if (rest[0] === "mcp") { await startMcp(bench); return 0; }
     return await createCli(bench, { bin: BIN }).main(rest);
   } catch (caught) {
     console.error(caught instanceof Error ? caught.message : String(caught));

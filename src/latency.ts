@@ -251,3 +251,27 @@ export function summarizeTimes(entries: Array<{ totalTimeMs: number; correct: bo
     mean: entries.length === 0 ? 0 : entries.reduce((sum, e) => sum + e.score, 0) / entries.length,
   };
 }
+
+export interface DeadlineRange { budgetClass: string; minMs: number; maxMs: number; tasks: number }
+
+/** Min/max `deadlineMs` per budget class, sorted tightest first. */
+export function deadlineRanges(tasks: readonly Task[]): DeadlineRange[] {
+  const byClass = new Map<string, DeadlineRange>();
+  for (const task of tasks) {
+    const meta = latencyMeta(task);
+    if (meta.deadlineMs <= 0) continue;
+    const entry = byClass.get(meta.budgetClass) ?? { budgetClass: meta.budgetClass, minMs: Infinity, maxMs: 0, tasks: 0 };
+    entry.minMs = Math.min(entry.minMs, meta.deadlineMs);
+    entry.maxMs = Math.max(entry.maxMs, meta.deadlineMs);
+    entry.tasks += 1;
+    byClass.set(meta.budgetClass, entry);
+  }
+  return [...byClass.values()].sort((a, b) => a.minMs - b.minMs || a.budgetClass.localeCompare(b.budgetClass));
+}
+
+/** Canonical range text for docs and metadata, e.g. "voice 447-641 ms, UI 875-1494 ms". */
+export function formatDeadlineRanges(tasks: readonly Task[]): string {
+  return deadlineRanges(tasks)
+    .map((range) => `${range.budgetClass === "ui" ? "UI" : range.budgetClass} ${range.minMs}-${range.maxMs} ms`)
+    .join(", ");
+}

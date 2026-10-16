@@ -40,10 +40,20 @@ totalTimeMs = model turn time (measured or declared) + sum of scheduled latencie
 `totalTimeMs <= metadata.deadlineMs`. A correct answer that arrives late
 scores 0 on the headline and is counted separately as `lateButCorrect`.
 
+Each task sets `deadlineMs` at 1.5-2x its shortest correct path (one
+declared turn per minimal call plus the final answer turn, plus the
+scheduled call charges). The shipped data spans voice 447-641 ms, UI
+875-1494 ms, background 2025-3714 ms; the e2e regenerates this range text
+from `data/tasks.jsonl` and fails if the docs drift.
+
 Traces submitted through `score`/`/v1/score`/`score_answer` have no
-environment record, so they are billed in declared mode. A submitted trace
-that carries `clock: "measured"` times is trusted as written; use the
-benchmark's own runs for comparisons.
+trustworthy environment record, so they are billed in declared mode. A
+submitted trace that carries `clock: "measured"` times is not trusted as
+written on the server surfaces: `/v1/score` and MCP `score_answer` strip
+the claimed measured clock before grading (the response's `latency.clock`
+shows what was billed). The local SDK `score` helper still honors a
+measured record, so results from the benchmark's own runs keep their real
+turn times.
 
 ## Answer extraction
 
@@ -99,6 +109,12 @@ Substrings inside longer tokens do not match (`18929` is not `8929`).
     answer, so its result could ground a trace that never read real
     evidence. Guard: the evidence replay skips `describe_tools` results;
     they still cost their flat 25 ms.
+13. **Self-reported measured clock:** a submitted trace can claim
+    arbitrarily small `turnTimesMs` under `clock: "measured"`. Guard:
+    `/v1/score` and MCP `score_answer` strip the claimed measured clock
+    and bill declared `thinkMs` per turn; measured billing only counts
+    when it comes from the environment's own `finalState` during `run` or
+    a local SDK `score` call.
 
 ## Bad-answer and good-answer passes
 
@@ -109,8 +125,9 @@ paraphrases (`The answer is X.`, `**X**`, `Answer: X`) and the mock good
 policy (minimal correct calls plus the expected answer) score 1. The E2E
 also calls `describe_tools` on every task and pins its returned latencies
 and flat 25 ms charge. A hand
-built trace with `clock: "measured"` and a 1501 ms turn on a 700 ms voice
-task scores 0 while the same trace marked `declared` stays billable. The
+built trace with `clock: "measured"` and a single turn one millisecond
+past the deadline scores 0 while the same trace marked `declared` stays
+billable. The
 deadline boundary is pinned too: the same good trace scores 1 at 1x
 deadline and 0 (late) at 0.5x when the half deadline falls below its total
 time. A `describe_tools`-only trace on a task whose latency schedule

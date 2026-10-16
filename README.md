@@ -83,6 +83,14 @@ wrongness. Every run report also carries a `latency` block with p50/p95
 total time, the `lateButCorrect` count, and a quality-vs-deadline curve
 at 0.5x, 1x, 2x, and 4x each deadline.
 
+Measured mode bills real wall-clock turn time, and the deadlines assume
+about 80 ms of model time per turn (the declared `thinkMs`). A hosted chat
+model that needs a second or more per turn will therefore score near 0 in
+measured mode on voice and UI tasks — that is what the benchmark is
+measuring. For cross-model comparisons where raw speed should not
+dominate, run `--clock declared` so every model is billed the same 80 ms
+per turn.
+
 ## How it works
 
 ```text
@@ -130,13 +138,14 @@ The E2E gate checks every listed surface against the package source.
 
 Each task sets `deadlineMs` at 1.5-2x its shortest correct path (declared
 turn time plus scheduled call charges), so slower schedules get wider
-budgets and nothing is loose enough to hide wasted calls.
+budgets and nothing is loose enough to hide wasted calls. The shipped data
+spans voice 447-641 ms, UI 875-1494 ms, background 2025-3714 ms.
 
-| Class | Minimal calls | Typical deadline | What burns the budget |
+| Class | Minimal calls | Deadline range | What burns the budget |
 | --- | --- | --- | --- |
-| voice | 1 | ~0.4-0.7 s | A repeat lookup or a wrong first guess |
-| UI | 2 | ~1-1.5 s | Redundant searches before the follow-up call |
-| background | 3 | ~2-4 s | Long chains of speculative calls |
+| voice | 1 | 447-641 ms | A repeat lookup or a wrong first guess |
+| UI | 2 | 875-1494 ms | Redundant searches before the follow-up call |
+| background | 3 | 2025-3714 ms | Long chains of speculative calls |
 
 Per-call charges range from 100 ms (voice lookup) to 700 ms (background
 search). Retrying a failed call costs the full charge again, and the
@@ -189,14 +198,20 @@ npx benchmark-latency-budget mcp
 ```
 
 Tools are `list_tasks`, `get_task`, `score_answer`, `run_benchmark`, and
-`get_provenance`.
+`get_provenance`. `run_benchmark` returns the report with the `latency`
+summary and accepts `provider: "mock"` for offline runs; `score_answer`
+replies with a per-submission `latency` timing block.
 
 ## HTTP API
 
 Import `handler` from `benchmark-latency-budget/api`, or run
 `npx benchmark-latency-budget serve`. Routes are `GET /health`,
 `GET /v1/tasks`, `GET /v1/tasks/:id`, `POST /v1/score`,
-`GET /v1/provenance`, and `GET /v1/index-entry`.
+`GET /v1/provenance`, and `GET /v1/index-entry`. `POST /v1/score` returns
+the score plus a `latency` timing block (deadline, billed total, clock
+mode, on-time flag). Server surfaces ignore self-reported measured turn
+times — a caller cannot prove them — so submitted traces are billed at the
+declared rate.
 
 ## Data provenance
 

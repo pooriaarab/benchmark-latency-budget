@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { defineBenchmark, type Task } from "benchmark-core";
-import { gradeLatency, latencyMeta } from "./latency.js";
+import { formatDeadlineRanges, gradeLatency, latencyMeta } from "./latency.js";
 import { LatencyBudgetEnvironment, type ClockMode } from "./simulator.js";
 
 export interface LatencyBenchmarkOptions {
@@ -17,10 +18,21 @@ export async function loadTasksFrom(tasksPath?: string): Promise<Task[]> {
   return text.trim().split("\n").map((line) => JSON.parse(line) as Task);
 }
 
+/** Deadline range text generated from the task data, so metadata cannot drift. */
+function deadlineText(tasksPath?: string): string {
+  try {
+    const text = readFileSync(tasksPath ?? DEFAULT_TASKS_URL, "utf8");
+    const tasks = text.trim().split("\n").map((line) => JSON.parse(line) as Task);
+    return formatDeadlineRanges(tasks) || "a per-task deadline";
+  } catch {
+    return "a per-task deadline";
+  }
+}
+
 export function createLatencyBenchmark(options: LatencyBenchmarkOptions = {}) {
   return defineBenchmark({
     id: "benchmark-latency-budget", name: "Latency Budget", tagline: "Quality that only counts if it arrives before the deadline.", tags: ["helpful"], category: "agents",
-    whatItMeasures: "Whether an agent gives the right answer before a voice (700ms), UI (2s), or background (10s) deadline, with virtual per-tool latencies.", version: "0.1.0", status: "alpha",
+    whatItMeasures: `Whether an agent gives the right answer before its deadline (${deadlineText(options.tasksPath)}), each set at 1.5-2x the shortest correct path, with virtual per-tool latencies.`, version: "0.1.0", status: "alpha",
     loadTasks: () => loadTasksFrom(options.tasksPath),
     grade(task, submission, context) {
       return gradeLatency(task, submission, context.seed);
