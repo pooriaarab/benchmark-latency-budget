@@ -99,6 +99,11 @@ Substrings inside longer tokens do not match (`18929` is not `8929`).
     answer, so its result could ground a trace that never read real
     evidence. Guard: the evidence replay skips `describe_tools` results;
     they still cost their flat 25 ms.
+13. **Report rows unknown to the source:** summarizing a run report with
+    the wrong task list (for example a hidden split against the public
+    source) used to skip every row and print a 0-row deadline curve.
+    Guard: `latencyReport` throws and names the unknown task ids; hidden
+    tasks carry `h-` prefixed ids so the two sets can never collide.
 
 ## Bad-answer and good-answer passes
 
