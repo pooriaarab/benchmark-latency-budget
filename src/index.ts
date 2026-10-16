@@ -6,9 +6,10 @@ export async function score(taskId: string, submission: Trace) {
   const task = await benchmark.getTask(taskId); if (!task) throw new Error(`Task not found: ${taskId}`);
   return benchmark.score(task, submission);
 }
-export { LatencyBudgetEnvironment, LATENCY_TOOLS } from "./simulator.js";
+export { DESCRIBE_TOOLS_MS, LatencyBudgetEnvironment, LATENCY_TOOLS } from "./simulator.js";
+export type { ClockMode } from "./simulator.js";
 export {
-  CURVE_FACTORS, UNKNOWN_TOOL_MS, evidenceFound, gradeLatency, isCorrect,
-  latencyMeta, normalizeAnswer, percentile, summarizeTimes, sweepDeadlines, totalTimeMs,
+  CURVE_FACTORS, UNKNOWN_TOOL_MS, answerCandidates, candidateValues, evidenceFound, gradeLatency, isCorrect,
+  latencyMeta, mentionsValue, normalizeAnswer, percentile, summarizeTimes, sweepDeadlines, timeBreakdown, totalTimeMs,
 } from "./latency.js";
-export type { CurvePoint, LatencyMeta, MinimalCall, TimeSummary } from "./latency.js";
+export type { CurvePoint, LatencyMeta, MinimalCall, TimeBreakdown, TimeSummary } from "./latency.js";

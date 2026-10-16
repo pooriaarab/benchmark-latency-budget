@@ -28,6 +28,24 @@ for (const task of samples) {
   const goodLog = meta.minimalCalls.map((call) => ({ name: call.name, args: call.args, result: null }));
   const good = { answer: task.expected, toolLog: goodLog };
   assert.equal((await scoreOne(task.id, good)).score, 1);
+  const expectedThink = meta.thinkMs * (meta.minimalCalls.length + 1);
+  const expectedTool = meta.minimalCalls.reduce((sum, call) => sum + meta.latencyMs[call.name], 0);
+  assert.equal(totalTimeMs(task, goodLog), expectedThink + expectedTool);
+  const paraphrases = [
+    `The answer is ${task.expected}.`,
+    `Answer: ${task.expected}`,
+    `**${task.expected}**`,
+    `${task.expected}`,
+    String(task.expected).toLowerCase(),
+  ];
+  for (const text of paraphrases) {
+    assert.equal((await scoreOne(task.id, { answer: text, toolLog: goodLog })).score, 1, `${task.id} paraphrase ${text}`);
+  }
+  const measuredLate = { answer: task.expected, toolLog: goodLog, finalState: { clock: "measured", turnTimesMs: [meta.deadlineMs + 1] } };
+  assert.equal((await scoreOne(task.id, measuredLate)).score, 0, `${task.id} measured late`);
+  const declaredSame = { answer: task.expected, toolLog: goodLog, finalState: { clock: "declared", turnTimesMs: [meta.deadlineMs + 1] } };
+  assert.equal(totalTimeMs(task, declaredSame), expectedThink + expectedTool);
+  assert.equal((await scoreOne(task.id, declaredSame)).score, 1, `${task.id} declared clock`);
   const badAnswers = [
     {},
     { answer: "xyzzy-not-an-answer" },
