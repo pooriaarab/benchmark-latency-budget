@@ -2,3 +2,11 @@ node_modules/
 dist/
 artifacts/
 *.tgz
+paper/*.pdf
+paper/*.log
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.sty
+paper/.style.zip

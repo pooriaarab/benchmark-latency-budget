@@ -1,0 +1,6 @@
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}\begin{axis}[ylabel={Virtual milliseconds},xlabel={Task index: voice, UI, then background},legend pos=north west]
+\addplot+[mark=*,mark size=1pt] table[x=x,y=time,col sep=comma]{figures/coverage.generated.csv};\addlegendentry{Oracle time}
+\addplot+[mark=*,mark size=1pt] table[x=x,y=deadline,col sep=comma]{figures/coverage.generated.csv};\addlegendentry{Deadline}
+\end{axis}\end{tikzpicture}
+\caption{Reference paths fit their assigned budgets. The same ordering shows longer paths and looser deadlines together; class effects are confounded with path length.}\label{fig:coverage}\end{figure}

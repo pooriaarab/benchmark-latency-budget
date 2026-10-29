@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "title": "Latency Budget: Grounded Answers Under Explicit Deadlines",
+  "authors": [
+    {
+      "name": "Pooria Arab",
+      "affiliation": "Independent researcher",
+      "orcid": "https://orcid.org/0009-0005-9964-6841"
+    }
+  ],
+  "source_commit": "c82bd8290465f96171a1e6776402ff8777c668cf",
+  "license": "CC-BY-4.0",
+  "keywords": [
+    "agent evaluation",
+    "latency budget",
+    "grounded answers",
+    "simulated experiments"
+  ],
+  "code_url": "https://github.com/pooriaarab/benchmark-latency-budget",
+  "artifact_name": "latency-budget-paper.pdf"
+}

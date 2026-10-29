@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "title": "Latency Budget: Grounded Answers Under Explicit Deadlines",
+  "authors": [
+    {
+      "name": "Pooria Arab",
+      "affiliation": "Independent researcher",
+      "orcid": "https://orcid.org/0009-0005-9964-6841"
+    }
+  ],
+  "license": "CC-BY-4.0",
+  "keywords": [
+    "agent evaluation",
+    "latency budget",
+    "grounded answers",
+    "simulated experiments"
+  ],
+  "code_url": "https://github.com/pooriaarab/benchmark-latency-budget",
+  "artifact_name": "latency-budget-paper.pdf",
+  "abstract": "An answer can be grounded and still arrive too late to be useful. Latency Budget measures this distinction on 36 synthetic directory, calendar, and document tasks. Credit requires a single correct candidate, replayed evidence, and completion within an explicit deadline. We run 1656 local episodes across 23 repeated conditions without paid inference. The privileged oracle obtains 100.0 [90.4, 100.0] percent deadline credit (95% Wilson interval); each blind control obtains 0.0 [0.0, 9.6] percent. An additional simulated factorial experiment varies declared thinking time and redundant tool calls while holding task deadlines fixed. At 80 ms per turn, one redundant call reduces deadline credit to 75.0 [58.9, 86.2] percent, while grounded correctness remains 100.0 [90.4, 100.0] percent. The experiment demonstrates sensitivity to wasted actions under the chosen cost model. It does not measure learned-agent performance, network latency, or human deadline preferences."
+}
