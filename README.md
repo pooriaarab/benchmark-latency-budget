@@ -1,5 +1,7 @@
 # benchmark-latency-budget
 
+Paper: [10.5281/zenodo.23752409](https://doi.org/10.5281/zenodo.23752409)
+
 [![npm](https://img.shields.io/npm/v/benchmark-latency-budget)](https://www.npmjs.com/package/benchmark-latency-budget) [![downloads](https://img.shields.io/npm/dm/benchmark-latency-budget)](https://www.npmjs.com/package/benchmark-latency-budget) [![license](https://img.shields.io/npm/l/benchmark-latency-budget)](./LICENSE) [![types](https://img.shields.io/badge/TypeScript-types-3178c6)](#sdk)
 
 [AI Benchmark Index](https://private-repo-337e.com/benchmarks/benchmark-latency-budget) · [npm](https://www.npmjs.com/package/benchmark-latency-budget) · [API](#http-api) · [MCP](#model-context-protocol)
