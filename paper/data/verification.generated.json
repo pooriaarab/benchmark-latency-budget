@@ -1,0 +1,12 @@
+{
+  "result": "pass",
+  "episodes": 1656,
+  "conditions": 23,
+  "pages": 10,
+  "figures": 4,
+  "raw_scores_replayed": true,
+  "repeat_hashes_match": true,
+  "source_hashes_match": true,
+  "prereg_precedes_data": true,
+  "pdf_sha256": "86814b8940fe1562eaf68ed4204024fa64ce952c53327b3e6e911f8c7cceeffb"
+}

@@ -1,0 +1,8 @@
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}\begin{axis}[ymin=0,ymax=105,ylabel={Deadline credit (percent)},xlabel={Deadline multiplier},xtick={0.5,1,2,4},legend style={at={(0.5,-0.3)},anchor=north,legend columns=2}]
+\addplot+[okblue,mark=*,error bars/.cd,y dir=both,y explicit] table[x=x,y=y,y error minus=lo,y error plus=hi,col sep=comma]{figures/curve0.generated.csv};\addlegendentry{0 extra calls}
+\addplot+[okorange,mark=square*,error bars/.cd,y dir=both,y explicit] table[x=x,y=y,y error minus=lo,y error plus=hi,col sep=comma]{figures/curve1.generated.csv};\addlegendentry{1 extra calls}
+\addplot+[black,mark=triangle*,error bars/.cd,y dir=both,y explicit] table[x=x,y=y,y error minus=lo,y error plus=hi,col sep=comma]{figures/curve2.generated.csv};\addlegendentry{2 extra calls}
+\addplot+[gray,mark=diamond*,error bars/.cd,y dir=both,y explicit] table[x=x,y=y,y error minus=lo,y error plus=hi,col sep=comma]{figures/curve4.generated.csv};\addlegendentry{4 extra calls}
+\end{axis}\end{tikzpicture}
+\caption{Simulated deadline relaxation restores credit to late correct traces. Thinking time stays at the baseline setting. Curves rescore fixed behavior; they do not measure adaptation. Wilson intervals show task uncertainty.}\label{fig:curve}\end{figure}
